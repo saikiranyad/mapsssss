@@ -1334,7 +1334,7 @@ const placeIcon = new L.Icon({
 // Initialize socket connection with error handling
 let socket
 try {
-  socket = io("https://map-functionality.onrender.com", {
+  socket = io("https://mapsssss.vercel.app/", {
     transports: ["websocket"],
     reconnection: true,
     reconnectionAttempts: 5,
