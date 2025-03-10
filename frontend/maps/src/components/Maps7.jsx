@@ -1288,7 +1288,7 @@
 
 
 
-"use client"
+// "use client"
 
 import { useEffect, useState } from "react"
 import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap, useMapEvents } from "react-leaflet"
