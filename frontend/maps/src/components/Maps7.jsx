@@ -1288,6 +1288,8 @@
 
 
 
+"use client"
+
 import { useEffect, useState } from "react"
 import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap, useMapEvents } from "react-leaflet"
 import "leaflet/dist/leaflet.css"
@@ -1303,33 +1305,40 @@ L.Icon.Default.mergeOptions({
   shadowUrl: "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png",
 })
 
-// Custom icons
-const startIcon = new L.Icon({
-  iconUrl: "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-green.png",
-  shadowUrl: "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png",
-  iconSize: [25, 41],
-  iconAnchor: [12, 41],
-  popupAnchor: [1, -34],
-  shadowSize: [41, 41],
-})
+// Custom icons for different place types
+const createIcon = (color) =>
+  new L.Icon({
+    iconUrl: `https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-${color}.png`,
+    shadowUrl: "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png",
+    iconSize: [25, 41],
+    iconAnchor: [12, 41],
+    popupAnchor: [1, -34],
+    shadowSize: [41, 41],
+  })
 
-const endIcon = new L.Icon({
-  iconUrl: "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-red.png",
-  shadowUrl: "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png",
-  iconSize: [25, 41],
-  iconAnchor: [12, 41],
-  popupAnchor: [1, -34],
-  shadowSize: [41, 41],
-})
+const icons = {
+  start: createIcon("green"),
+  end: createIcon("red"),
+  restaurant: createIcon("blue"),
+  cafe: createIcon("orange"),
+  bar: createIcon("violet"),
+  gym: createIcon("gold"),
+  hospital: createIcon("grey"),
+  pharmacy: createIcon("yellow"),
+  school: createIcon("black"),
+  default: createIcon("blue"),
+}
 
-const placeIcon = new L.Icon({
-  iconUrl: "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-blue.png",
-  shadowUrl: "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png",
-  iconSize: [25, 41],
-  iconAnchor: [12, 41],
-  popupAnchor: [1, -34],
-  shadowSize: [41, 41],
-})
+// Place type definitions with icons and display names
+const placeTypes = [
+  { value: "restaurant", label: "Restaurants", icon: icons.restaurant },
+  { value: "cafe", label: "Cafes", icon: icons.cafe },
+  { value: "bar", label: "Bars", icon: icons.bar },
+  { value: "gym", label: "Gyms", icon: icons.gym },
+  { value: "hospital", label: "Hospitals", icon: icons.hospital },
+  { value: "pharmacy", label: "Pharmacies", icon: icons.pharmacy },
+  { value: "school", label: "Schools", icon: icons.school },
+]
 
 // Initialize socket connection with error handling
 let socket
@@ -1363,7 +1372,7 @@ const RecenterMap = ({ center }) => {
 
 // Component to handle map clicks
 const MapClickHandler = ({ onMapClick }) => {
-  const map = useMapEvents({
+  useMapEvents({
     click: (e) => {
       onMapClick(e)
     },
@@ -1382,6 +1391,46 @@ const speak = (text) => {
   }
 }
 
+// Loading spinner component
+const LoadingSpinner = () => (
+  <div
+    style={{
+      position: "absolute",
+      top: "50%",
+      left: "50%",
+      transform: "translate(-50%, -50%)",
+      zIndex: 1000,
+      background: "rgba(255, 255, 255, 0.8)",
+      padding: "20px",
+      borderRadius: "10px",
+      boxShadow: "0 4px 8px rgba(0, 0, 0, 0.1)",
+      display: "flex",
+      flexDirection: "column",
+      alignItems: "center",
+      justifyContent: "center",
+    }}
+  >
+    <div
+      style={{
+        border: "4px solid #f3f3f3",
+        borderTop: "4px solid #3498db",
+        borderRadius: "50%",
+        width: "40px",
+        height: "40px",
+        animation: "spin 2s linear infinite",
+        marginBottom: "10px",
+      }}
+    ></div>
+    <p style={{ margin: 0, fontWeight: "bold" }}>Loading map data...</p>
+    <style>{`
+      @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+      }
+    `}</style>
+  </div>
+)
+
 const Maps7 = () => {
   // Default to London coordinates
   const [userLocation, setUserLocation] = useState([51.505, -0.09])
@@ -1397,13 +1446,23 @@ const Maps7 = () => {
   const [manualLocationMode, setManualLocationMode] = useState(false)
   const [tempLocation, setTempLocation] = useState({ lat: 51.505, lng: -0.09 })
   const [locationError, setLocationError] = useState(null)
+  const [isLoading, setIsLoading] = useState(true)
+  const [mapReady, setMapReady] = useState(false)
+  const [searchRadius, setSearchRadius] = useState(1000) // in meters
+  const [selectedPlace, setSelectedPlace] = useState(null)
+  const [darkMode, setDarkMode] = useState(false)
+  const [showAllPlaces, setShowAllPlaces] = useState(false)
+  const [allPlaces, setAllPlaces] = useState([])
 
   // Try to get user location, but handle errors gracefully
   useEffect(() => {
+    setIsLoading(true)
+
     // Check if geolocation is available
     if (!navigator.geolocation) {
       setGeolocationAvailable(false)
       setLocationError("Geolocation is not supported by your browser")
+      setIsLoading(false)
       return
     }
 
@@ -1415,6 +1474,7 @@ const Maps7 = () => {
           setUserLocation([latitude, longitude])
           setTempLocation({ lat: latitude, lng: longitude })
           socket.emit("updateLocation", { lat: latitude, lng: longitude })
+          setIsLoading(false)
         },
         (error) => {
           console.error("Error getting location:", error)
@@ -1435,6 +1495,7 @@ const Maps7 = () => {
           }
 
           setManualLocationMode(true)
+          setIsLoading(false)
         },
         { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 },
       )
@@ -1502,15 +1563,20 @@ const Maps7 = () => {
   // Fetch nearby places using Overpass API
   useEffect(() => {
     const fetchNearbyPlaces = async () => {
-      if (!userLocation[0] || !userLocation[1]) return
+      if (!userLocation[0] || !userLocation[1] || !mapReady) return
+
+      setIsLoading(true)
 
       try {
+        // Calculate bounding box based on radius (approximate conversion from meters to degrees)
+        const radiusDegrees = searchRadius / 111000 // roughly 111km per degree
+
         // Using Overpass API
         const query = `
           [out:json];
           node
             ["amenity"="${searchQuery}"]
-            (${userLocation[0] - 0.01},${userLocation[1] - 0.01},${userLocation[0] + 0.01},${userLocation[1] + 0.01});
+            (${userLocation[0] - radiusDegrees},${userLocation[1] - radiusDegrees},${userLocation[0] + radiusDegrees},${userLocation[1] + radiusDegrees});
           out;
         `
 
@@ -1523,23 +1589,38 @@ const Maps7 = () => {
             lat: el.lat,
             lng: el.lon,
             name: el.tags && el.tags.name ? el.tags.name : `Unnamed ${searchQuery}`,
+            type: searchQuery,
+            amenity: el.tags || {},
           }))
+
           setPlaces(parsedPlaces)
+
+          // Add to all places if showing all
+          if (showAllPlaces) {
+            setAllPlaces((prev) => {
+              // Filter out places of the same type to avoid duplicates
+              const filtered = prev.filter((p) => p.type !== searchQuery)
+              return [...filtered, ...parsedPlaces]
+            })
+          }
         }
       } catch (error) {
         console.error(`Error fetching nearby ${searchQuery}s:`, error)
         // Fallback to empty array if API fails
         setPlaces([])
+      } finally {
+        setIsLoading(false)
       }
     }
 
-    if (userLocation[0] && userLocation[1]) {
+    if (userLocation[0] && userLocation[1] && mapReady) {
       fetchNearbyPlaces()
     }
-  }, [userLocation, searchQuery])
+  }, [userLocation, searchQuery, mapReady, searchRadius, showAllPlaces])
 
   // Calculate route between two points using OSRM
   const calculateRoute = async (start, end) => {
+    setIsLoading(true)
     try {
       const response = await axios.get(
         `https://router.project-osrm.org/route/v1/driving/${start[1]},${start[0]};${end[1]},${end[0]}?overview=full&geometries=geojson`,
@@ -1561,6 +1642,8 @@ const Maps7 = () => {
       }
     } catch (error) {
       console.error("Error calculating route:", error)
+    } finally {
+      setIsLoading(false)
     }
   }
 
@@ -1611,6 +1694,7 @@ const Maps7 = () => {
 
   // Handle place selection
   const handlePlaceSelect = (place) => {
+    setSelectedPlace(place)
     if (!startPoint) {
       setStartPoint({ lat: userLocation[0], lng: userLocation[1] })
       setEndPoint({ lat: place.lat, lng: place.lng })
@@ -1633,113 +1717,446 @@ const Maps7 = () => {
     speak("Click on the map to set your location")
   }
 
+  // Toggle dark mode
+  const toggleDarkMode = () => {
+    setDarkMode(!darkMode)
+    document.body.classList.toggle("dark")
+  }
+
+  // Toggle showing all places
+  const toggleShowAllPlaces = () => {
+    setShowAllPlaces(!showAllPlaces)
+    if (!showAllPlaces) {
+      // If turning on, add current places to all places
+      setAllPlaces(places)
+    }
+  }
+
+  // Get icon for place type
+  const getPlaceIcon = (type) => {
+    const placeType = placeTypes.find((pt) => pt.value === type)
+    return placeType ? placeType.icon : icons.default
+  }
+
+  // Styles with dark mode support
   const styles = {
     container: {
       padding: "20px",
       textAlign: "center",
-      background: "#f8f9fa",
+      background: darkMode ? "#1a1a1a" : "#f8f9fa",
+      color: darkMode ? "#f8f9fa" : "#333",
       borderRadius: "10px",
-      fontFamily: "Arial, sans-serif",
-      maxWidth: "1000px",
+      fontFamily: "'Segoe UI', Arial, sans-serif",
+      maxWidth: "1200px",
       margin: "0 auto",
+      boxShadow: darkMode ? "0 4px 20px rgba(0,0,0,0.5)" : "0 4px 20px rgba(0,0,0,0.1)",
+      transition: "all 0.3s ease",
+      position: "relative",
+    },
+    header: {
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "center",
+      marginBottom: "20px",
+      borderBottom: darkMode ? "1px solid #444" : "1px solid #ddd",
+      paddingBottom: "10px",
+    },
+    title: {
+      fontSize: "28px",
+      fontWeight: "bold",
+      margin: "0",
+      color: darkMode ? "#3498db" : "#2980b9",
+    },
+    controls: {
+      display: "flex",
+      gap: "10px",
+    },
+    searchContainer: {
+      display: "flex",
+      flexDirection: "column",
+      gap: "10px",
+      marginBottom: "20px",
+    },
+    searchRow: {
+      display: "flex",
+      flexWrap: "wrap",
+      gap: "10px",
+      justifyContent: "center",
+      alignItems: "center",
     },
     input: {
-      padding: "10px",
-      marginBottom: "10px",
-      width: "80%",
-      borderRadius: "5px",
-      border: "1px solid #ccc",
+      padding: "12px",
+      borderRadius: "8px",
+      border: darkMode ? "1px solid #444" : "1px solid #ccc",
+      background: darkMode ? "#333" : "white",
+      color: darkMode ? "white" : "black",
+      flex: "1",
+      minWidth: "200px",
+      maxWidth: "400px",
+      fontSize: "16px",
+    },
+    select: {
+      padding: "12px",
+      borderRadius: "8px",
+      border: darkMode ? "1px solid #444" : "1px solid #ccc",
+      background: darkMode ? "#333" : "white",
+      color: darkMode ? "white" : "black",
+      cursor: "pointer",
+      minWidth: "150px",
+    },
+    rangeContainer: {
+      display: "flex",
+      alignItems: "center",
+      gap: "10px",
+      padding: "5px 10px",
+      background: darkMode ? "#333" : "#f0f0f0",
+      borderRadius: "8px",
+      minWidth: "200px",
+    },
+    rangeLabel: {
+      fontSize: "14px",
+      whiteSpace: "nowrap",
+    },
+    range: {
+      flex: "1",
     },
     button: {
-      margin: "10px",
-      padding: "10px 20px",
+      padding: "12px 20px",
       color: "white",
       border: "none",
-      borderRadius: "5px",
+      borderRadius: "8px",
       cursor: "pointer",
       fontWeight: "bold",
+      transition: "all 0.2s ease",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: "5px",
+      minWidth: "120px",
     },
     startButton: {
-      background: "green",
+      background: "#27ae60",
+      boxShadow: "0 4px 6px rgba(39, 174, 96, 0.2)",
+      "&:hover": {
+        background: "#2ecc71",
+        transform: "translateY(-2px)",
+      },
     },
     endButton: {
-      background: "red",
+      background: "#e74c3c",
+      boxShadow: "0 4px 6px rgba(231, 76, 60, 0.2)",
+      "&:hover": {
+        background: "#c0392b",
+        transform: "translateY(-2px)",
+      },
     },
     locationButton: {
       background: "#3498db",
+      boxShadow: "0 4px 6px rgba(52, 152, 219, 0.2)",
+      "&:hover": {
+        background: "#2980b9",
+        transform: "translateY(-2px)",
+      },
+    },
+    toggleButton: {
+      background: darkMode ? "#f39c12" : "#9b59b6",
+      boxShadow: darkMode ? "0 4px 6px rgba(243, 156, 18, 0.2)" : "0 4px 6px rgba(155, 89, 182, 0.2)",
+      "&:hover": {
+        background: darkMode ? "#e67e22" : "#8e44ad",
+        transform: "translateY(-2px)",
+      },
     },
     infoText: {
       margin: "5px 0",
       fontSize: "16px",
+      fontWeight: "500",
     },
     errorText: {
       color: "#e74c3c",
       margin: "10px 0",
-      padding: "10px",
-      background: "#fadbd8",
-      borderRadius: "5px",
+      padding: "15px",
+      background: darkMode ? "rgba(231, 76, 60, 0.2)" : "#fadbd8",
+      borderRadius: "8px",
+      display: "flex",
+      flexDirection: "column",
+      alignItems: "center",
+      gap: "10px",
     },
     mapContainer: {
-      height: "500px",
+      height: "600px",
       width: "100%",
-      borderRadius: "8px",
-      boxShadow: "0 2px 5px rgba(0,0,0,0.1)",
+      borderRadius: "12px",
+      boxShadow: darkMode ? "0 8px 30px rgba(0,0,0,0.3)" : "0 8px 30px rgba(0,0,0,0.1)",
+      overflow: "hidden",
+      position: "relative",
+    },
+    contentGrid: {
+      display: "grid",
+      gridTemplateColumns: "1fr 3fr",
+      gap: "20px",
+      marginBottom: "20px",
+    },
+    sidebar: {
+      display: "flex",
+      flexDirection: "column",
+      gap: "20px",
     },
     placesList: {
-      maxHeight: "200px",
+      maxHeight: "400px",
       overflowY: "auto",
-      margin: "10px 0",
-      padding: "10px",
-      background: "white",
-      borderRadius: "5px",
+      padding: "15px",
+      background: darkMode ? "#333" : "white",
+      borderRadius: "8px",
       textAlign: "left",
+      boxShadow: darkMode ? "0 4px 8px rgba(0,0,0,0.3)" : "0 4px 8px rgba(0,0,0,0.1)",
     },
     placeItem: {
-      padding: "8px",
-      margin: "5px 0",
-      background: "#f0f0f0",
-      borderRadius: "4px",
+      padding: "12px",
+      margin: "8px 0",
+      background: darkMode ? "#444" : "#f0f0f0",
+      borderRadius: "6px",
       cursor: "pointer",
+      transition: "all 0.2s ease",
+      borderLeft: "4px solid #3498db",
+      "&:hover": {
+        transform: "translateX(5px)",
+        background: darkMode ? "#555" : "#e6e6e6",
+      },
+    },
+    selectedPlace: {
+      borderLeft: "4px solid #e74c3c",
+      background: darkMode ? "#555" : "#e6e6e6",
+    },
+    placeHeader: {
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "center",
+      marginBottom: "5px",
+    },
+    placeName: {
+      fontWeight: "bold",
+      fontSize: "16px",
+      margin: "0",
+    },
+    placeType: {
+      fontSize: "12px",
+      padding: "3px 8px",
+      borderRadius: "12px",
+      background: "#3498db",
+      color: "white",
     },
     manualLocationForm: {
       display: "flex",
       flexDirection: "column",
       alignItems: "center",
       margin: "15px 0",
-      padding: "15px",
-      background: "#e8f4f8",
-      borderRadius: "8px",
+      padding: "20px",
+      background: darkMode ? "#333" : "#e8f4f8",
+      borderRadius: "12px",
+      boxShadow: darkMode ? "0 4px 8px rgba(0,0,0,0.3)" : "0 4px 8px rgba(0,0,0,0.1)",
     },
     coordInput: {
-      padding: "8px",
+      padding: "10px",
       margin: "5px",
-      width: "120px",
-      borderRadius: "4px",
-      border: "1px solid #ccc",
+      width: "150px",
+      borderRadius: "6px",
+      border: darkMode ? "1px solid #444" : "1px solid #ccc",
+      background: darkMode ? "#444" : "white",
+      color: darkMode ? "white" : "black",
     },
     submitButton: {
-      padding: "8px 15px",
-      margin: "10px",
+      padding: "10px 20px",
+      margin: "15px",
       background: "#2980b9",
       color: "white",
       border: "none",
-      borderRadius: "4px",
+      borderRadius: "6px",
       cursor: "pointer",
+      fontWeight: "bold",
+      transition: "all 0.2s ease",
+      "&:hover": {
+        background: "#3498db",
+        transform: "translateY(-2px)",
+      },
+    },
+    routeInfo: {
+      display: "flex",
+      justifyContent: "space-around",
+      padding: "15px",
+      background: darkMode ? "#333" : "white",
+      borderRadius: "8px",
+      marginBottom: "20px",
+      boxShadow: darkMode ? "0 4px 8px rgba(0,0,0,0.3)" : "0 4px 8px rgba(0,0,0,0.1)",
+    },
+    routeInfoItem: {
+      display: "flex",
+      flexDirection: "column",
+      alignItems: "center",
+    },
+    routeInfoValue: {
+      fontSize: "24px",
+      fontWeight: "bold",
+      color: "#3498db",
+    },
+    routeInfoLabel: {
+      fontSize: "14px",
+      color: darkMode ? "#ccc" : "#666",
+    },
+    instructions: {
+      marginTop: "20px",
+      padding: "20px",
+      background: darkMode ? "#333" : "white",
+      borderRadius: "8px",
+      boxShadow: darkMode ? "0 4px 8px rgba(0,0,0,0.3)" : "0 4px 8px rgba(0,0,0,0.1)",
+    },
+    instructionsTitle: {
+      fontSize: "20px",
+      fontWeight: "bold",
+      marginBottom: "10px",
+      color: darkMode ? "#3498db" : "#2980b9",
+    },
+    instructionsList: {
+      textAlign: "left",
+      paddingLeft: "20px",
+    },
+    instructionItem: {
+      margin: "10px 0",
+      lineHeight: "1.5",
+    },
+    footer: {
+      marginTop: "30px",
+      padding: "15px",
+      borderTop: darkMode ? "1px solid #444" : "1px solid #ddd",
+      fontSize: "14px",
+      color: darkMode ? "#ccc" : "#666",
+    },
+    placeTypeChips: {
+      display: "flex",
+      flexWrap: "wrap",
+      gap: "8px",
+      marginBottom: "15px",
+      justifyContent: "center",
+    },
+    placeTypeChip: {
+      padding: "8px 15px",
+      borderRadius: "20px",
+      cursor: "pointer",
+      fontSize: "14px",
+      fontWeight: "500",
+      transition: "all 0.2s ease",
+      border: "1px solid #3498db",
+    },
+    activeChip: {
+      background: "#3498db",
+      color: "white",
+    },
+    inactiveChip: {
+      background: darkMode ? "#333" : "white",
+      color: darkMode ? "#ccc" : "#3498db",
+    },
+    placeDetails: {
+      padding: "15px",
+      background: darkMode ? "#333" : "white",
+      borderRadius: "8px",
+      marginBottom: "20px",
+      boxShadow: darkMode ? "0 4px 8px rgba(0,0,0,0.3)" : "0 4px 8px rgba(0,0,0,0.1)",
+    },
+    placeDetailsTitle: {
+      fontSize: "18px",
+      fontWeight: "bold",
+      marginBottom: "10px",
+      color: darkMode ? "#3498db" : "#2980b9",
+    },
+    placeDetailsInfo: {
+      display: "flex",
+      flexDirection: "column",
+      gap: "5px",
+    },
+    placeDetailsItem: {
+      display: "flex",
+      justifyContent: "space-between",
+    },
+    placeDetailsLabel: {
+      fontWeight: "bold",
+      color: darkMode ? "#ccc" : "#666",
+    },
+    placeDetailsValue: {
+      color: darkMode ? "white" : "black",
+    },
+    placeDetailsActions: {
+      display: "flex",
+      justifyContent: "center",
+      marginTop: "15px",
+      gap: "10px",
+    },
+    responsiveGrid: {
+      display: "grid",
+      gridTemplateColumns: "1fr",
+      gap: "20px",
+      "@media (min-width: 768px)": {
+        gridTemplateColumns: "1fr 3fr",
+      },
     },
   }
 
+  // Apply hover effects with inline styles
+  const getPlaceItemStyle = (place) => {
+    const baseStyle = {
+      padding: "12px",
+      margin: "8px 0",
+      background: darkMode ? "#444" : "#f0f0f0",
+      borderRadius: "6px",
+      cursor: "pointer",
+      transition: "all 0.2s ease",
+      borderLeft: "4px solid #3498db",
+    }
+
+    // If this is the selected place
+    if (selectedPlace && selectedPlace.lat === place.lat && selectedPlace.lng === place.lng) {
+      return {
+        ...baseStyle,
+        borderLeft: "4px solid #e74c3c",
+        background: darkMode ? "#555" : "#e6e6e6",
+      }
+    }
+
+    return baseStyle
+  }
+
+  // Apply hover effects
+  const getButtonStyle = (baseStyle) => {
+    return {
+      ...baseStyle,
+      "&:hover": {
+        transform: "translateY(-2px)",
+        filter: "brightness(1.1)",
+      },
+    }
+  }
+
   return (
-    <div style={styles.container}>
-      <h2>Interactive Map Navigation</h2>
+    <div style={{ ...styles.container }} className={darkMode ? "dark" : ""}>
+      {/* Header */}
+      <div style={styles.header}>
+        <h2 style={styles.title}>Interactive Map Explorer</h2>
+        <div style={styles.controls}>
+          <button onClick={toggleDarkMode} style={{ ...styles.button, background: darkMode ? "#f39c12" : "#9b59b6" }}>
+            {darkMode ? "Light Mode" : "Dark Mode"}
+          </button>
+          <button
+            onClick={toggleShowAllPlaces}
+            style={{ ...styles.button, background: showAllPlaces ? "#27ae60" : "#3498db" }}
+          >
+            {showAllPlaces ? "Filter Places" : "Show All Places"}
+          </button>
+        </div>
+      </div>
 
       {/* Location error message */}
       {locationError && (
         <div style={styles.errorText}>
           {locationError}
-          <button
-            onClick={enableManualLocationMode}
-            style={{ ...styles.button, ...styles.locationButton, margin: "5px 10px" }}
-          >
+          <button onClick={enableManualLocationMode} style={{ ...styles.button, ...styles.locationButton }}>
             Set Location Manually
           </button>
         </div>
@@ -1778,138 +2195,301 @@ const Maps7 = () => {
         </div>
       )}
 
-      {/* Search input */}
-      <input
-        type="text"
-        value={searchQuery}
-        onChange={(e) => setSearchQuery(e.target.value)}
-        placeholder="Search places (e.g. restaurant, cafe, hospital)"
-        style={styles.input}
-      />
+      {/* Search controls */}
+      <div style={styles.searchContainer}>
+        <div style={styles.placeTypeChips}>
+          {placeTypes.map((type) => (
+            <div
+              key={type.value}
+              onClick={() => setSearchQuery(type.value)}
+              style={{
+                ...styles.placeTypeChip,
+                ...(searchQuery === type.value ? styles.activeChip : styles.inactiveChip),
+              }}
+            >
+              {type.label}
+            </div>
+          ))}
+        </div>
+
+        <div style={styles.searchRow}>
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search places (e.g. restaurant, cafe, hospital)"
+            style={styles.input}
+          />
+
+          <div style={styles.rangeContainer}>
+            <span style={styles.rangeLabel}>Radius: {searchRadius}m</span>
+            <input
+              type="range"
+              min="100"
+              max="5000"
+              step="100"
+              value={searchRadius}
+              onChange={(e) => setSearchRadius(Number.parseInt(e.target.value))}
+              style={styles.range}
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* Route information */}
+      {(distance || duration) && (
+        <div style={styles.routeInfo}>
+          {distance && (
+            <div style={styles.routeInfoItem}>
+              <span style={styles.routeInfoValue}>{distance} km</span>
+              <span style={styles.routeInfoLabel}>Distance</span>
+            </div>
+          )}
+          {duration && (
+            <div style={styles.routeInfoItem}>
+              <span style={styles.routeInfoValue}>{duration} min</span>
+              <span style={styles.routeInfoLabel}>Duration</span>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Navigation buttons */}
-      <div>
+      <div style={{ display: "flex", justifyContent: "center", gap: "15px", marginBottom: "20px" }}>
         <button
           onClick={handleStartNavigation}
-          style={{ ...styles.button, ...styles.startButton }}
+          style={{ ...styles.button, background: "#27ae60" }}
           disabled={!startPoint || !endPoint || manualLocationMode}
         >
           Start Navigation
         </button>
         <button
           onClick={handleEndNavigation}
-          style={{ ...styles.button, ...styles.endButton }}
+          style={{ ...styles.button, background: "#e74c3c" }}
           disabled={manualLocationMode}
         >
           End Navigation
         </button>
         {!manualLocationMode && !geolocationAvailable && (
-          <button onClick={enableManualLocationMode} style={{ ...styles.button, ...styles.locationButton }}>
+          <button onClick={enableManualLocationMode} style={{ ...styles.button, background: "#3498db" }}>
             Set Location
           </button>
         )}
       </div>
 
-      {/* Route information */}
-      {distance && <p style={styles.infoText}>Distance: {distance} km</p>}
-      {duration && <p style={styles.infoText}>Duration: {duration} min</p>}
-
-      {/* Places list */}
-      <div style={styles.placesList}>
-        <h3>Nearby {searchQuery}s:</h3>
-        {places.length > 0 ? (
-          places.map((place, index) => (
-            <div key={index} style={styles.placeItem} onClick={() => handlePlaceSelect(place)}>
-              {place.name}
-            </div>
-          ))
-        ) : (
-          <p>No {searchQuery}s found nearby</p>
-        )}
-      </div>
-
-      {/* Map */}
-      <MapContainer center={userLocation} zoom={15} style={styles.mapContainer}>
-        <TileLayer
-          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-        />
-
-        {/* User location marker */}
-        <Marker position={userLocation}>
-          <Popup>{manualLocationMode ? "Click to set your location" : "Your location"}</Popup>
-        </Marker>
-
-        {/* Start point marker */}
-        {startPoint && (
-          <Marker position={[startPoint.lat, startPoint.lng]} icon={startIcon}>
-            <Popup>Start Point</Popup>
-          </Marker>
-        )}
-
-        {/* End point marker */}
-        {endPoint && (
-          <Marker position={[endPoint.lat, endPoint.lng]} icon={endIcon}>
-            <Popup>End Point</Popup>
-          </Marker>
-        )}
-
-        {/* Route polyline */}
-        {route.length > 0 && <Polyline positions={route} color="blue" weight={6} opacity={0.7} />}
-
-        {/* Place markers */}
-        {places.map((place, index) => (
-          <Marker key={index} position={[place.lat, place.lng]} icon={placeIcon}>
-            <Popup>
-              <div>
-                <strong>{place.name}</strong>
-                <br />
+      {/* Main content grid */}
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "1fr",
+          gap: "20px",
+          "@media (min-width: 768px)": {
+            gridTemplateColumns: "1fr 3fr",
+          },
+        }}
+      >
+        {/* Sidebar */}
+        <div style={styles.sidebar}>
+          {/* Selected place details */}
+          {selectedPlace && (
+            <div style={styles.placeDetails}>
+              <h3 style={styles.placeDetailsTitle}>{selectedPlace.name}</h3>
+              <div style={styles.placeDetailsInfo}>
+                <div style={styles.placeDetailsItem}>
+                  <span style={styles.placeDetailsLabel}>Type:</span>
+                  <span style={styles.placeDetailsValue}>{selectedPlace.type}</span>
+                </div>
+                {selectedPlace.amenity &&
+                  Object.entries(selectedPlace.amenity).map(
+                    ([key, value]) =>
+                      key !== "name" && (
+                        <div key={key} style={styles.placeDetailsItem}>
+                          <span style={styles.placeDetailsLabel}>{key}:</span>
+                          <span style={styles.placeDetailsValue}>{value}</span>
+                        </div>
+                      ),
+                  )}
+              </div>
+              <div style={styles.placeDetailsActions}>
                 <button
-                  onClick={() => handlePlaceSelect(place)}
-                  style={{
-                    padding: "5px",
-                    margin: "5px 0",
-                    background: "#3498db",
-                    color: "white",
-                    border: "none",
-                    borderRadius: "3px",
-                    cursor: "pointer",
-                  }}
+                  onClick={() => handlePlaceSelect(selectedPlace)}
+                  style={{ ...styles.button, background: "#3498db" }}
                 >
                   Navigate Here
                 </button>
               </div>
-            </Popup>
-          </Marker>
-        ))}
+            </div>
+          )}
 
-        {/* Keep map centered on user location */}
-        <RecenterMap center={userLocation} />
+          {/* Places list */}
+          <div style={styles.placesList}>
+            <h3>Nearby {showAllPlaces ? "Places" : searchQuery + "s"}:</h3>
+            {(showAllPlaces ? allPlaces : places).length > 0 ? (
+              (showAllPlaces ? allPlaces : places).map((place, index) => (
+                <div
+                  key={index}
+                  style={getPlaceItemStyle(place)}
+                  onClick={() => setSelectedPlace(place)}
+                  onDoubleClick={() => handlePlaceSelect(place)}
+                >
+                  <div style={styles.placeHeader}>
+                    <h4 style={styles.placeName}>{place.name}</h4>
+                    <span
+                      style={{
+                        ...styles.placeType,
+                        background:
+                          place.type === "restaurant"
+                            ? "#3498db"
+                            : place.type === "cafe"
+                              ? "#f39c12"
+                              : place.type === "bar"
+                                ? "#9b59b6"
+                                : place.type === "gym"
+                                  ? "#27ae60"
+                                  : place.type === "hospital"
+                                    ? "#e74c3c"
+                                    : place.type === "pharmacy"
+                                      ? "#f1c40f"
+                                      : place.type === "school"
+                                        ? "#34495e"
+                                        : "#3498db",
+                      }}
+                    >
+                      {place.type}
+                    </span>
+                  </div>
+                  <div>Double-click to navigate</div>
+                </div>
+              ))
+            ) : (
+              <p>No {searchQuery}s found nearby</p>
+            )}
+          </div>
+        </div>
 
-        {/* Add click handler to map */}
-        <MapClickHandler onMapClick={handleMapClick} />
-      </MapContainer>
+        {/* Map */}
+        <div style={styles.mapContainer}>
+          {isLoading && <LoadingSpinner />}
+          <MapContainer
+            center={userLocation}
+            zoom={15}
+            style={{ height: "100%", width: "100%" }}
+            whenReady={() => setMapReady(true)}
+          >
+            <TileLayer
+              url={
+                darkMode
+                  ? "https://cartodb-basemaps-{s}.global.ssl.fastly.net/dark_all/{z}/{x}/{y}.png"
+                  : "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+              }
+              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+            />
+
+            {/* User location marker */}
+            <Marker position={userLocation}>
+              <Popup>{manualLocationMode ? "Click to set your location" : "Your location"}</Popup>
+            </Marker>
+
+            {/* Start point marker */}
+            {startPoint && (
+              <Marker position={[startPoint.lat, startPoint.lng]} icon={icons.start}>
+                <Popup>Start Point</Popup>
+              </Marker>
+            )}
+
+            {/* End point marker */}
+            {endPoint && (
+              <Marker position={[endPoint.lat, endPoint.lng]} icon={icons.end}>
+                <Popup>End Point</Popup>
+              </Marker>
+            )}
+
+            {/* Route polyline */}
+            {route.length > 0 && <Polyline positions={route} color="#3498db" weight={6} opacity={0.7} />}
+
+            {/* Place markers */}
+            {(showAllPlaces ? allPlaces : places).map((place, index) => (
+              <Marker key={index} position={[place.lat, place.lng]} icon={getPlaceIcon(place.type)}>
+                <Popup>
+                  <div>
+                    <strong>{place.name}</strong>
+                    <br />
+                    <span>{place.type}</span>
+                    <br />
+                    <button
+                      onClick={() => handlePlaceSelect(place)}
+                      style={{
+                        padding: "5px",
+                        margin: "5px 0",
+                        background: "#3498db",
+                        color: "white",
+                        border: "none",
+                        borderRadius: "3px",
+                        cursor: "pointer",
+                      }}
+                    >
+                      Navigate Here
+                    </button>
+                  </div>
+                </Popup>
+              </Marker>
+            ))}
+
+            {/* Keep map centered on user location */}
+            <RecenterMap center={userLocation} />
+
+            {/* Add click handler to map */}
+            <MapClickHandler onMapClick={handleMapClick} />
+          </MapContainer>
+        </div>
+      </div>
 
       {/* Instructions */}
-      <div style={{ marginTop: "20px" }}>
-        <p>Instructions:</p>
-        <ol style={{ textAlign: "left" }}>
+      <div style={styles.instructions}>
+        <h3 style={styles.instructionsTitle}>How to Use</h3>
+        <ol style={styles.instructionsList}>
           {manualLocationMode ? (
-            <li>Click on the map to set your location</li>
+            <li style={styles.instructionItem}>Click on the map to set your location</li>
           ) : (
             <>
-              <li>Click on the map to set a start point</li>
-              <li>Click again to set an end point</li>
-              <li>Click "Start Navigation" to begin</li>
-              <li>Or search for places and click on one to navigate to it</li>
+              <li style={styles.instructionItem}>
+                Use the place type chips to search for different places (restaurants, gyms, etc.)
+              </li>
+              <li style={styles.instructionItem}>Adjust the search radius using the slider</li>
+              <li style={styles.instructionItem}>Click on a place in the list or on the map to see details</li>
+              <li style={styles.instructionItem}>
+                Double-click a place or click "Navigate Here" to set it as your destination
+              </li>
+              <li style={styles.instructionItem}>Click "Start Navigation" to begin guided navigation</li>
+              <li style={styles.instructionItem}>Toggle "Show All Places" to see multiple place types at once</li>
+              <li style={styles.instructionItem}>Use Dark/Light mode toggle for different map styles</li>
             </>
           )}
         </ol>
       </div>
+
+      {/* Footer */}
+      <div style={styles.footer}>
+        <p>© {new Date().getFullYear()} Interactive Map Explorer | Using OpenStreetMap & Overpass API</p>
+      </div>
+
+      {/* Add global styles for dark mode */}
+      <style>{`
+        .dark {
+          background-color: #1a1a1a;
+          color: #f8f9fa;
+        }
+        @keyframes spin {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
+        }
+      `}</style>
     </div>
   )
 }
 
 export default Maps7
+
+
 
 
